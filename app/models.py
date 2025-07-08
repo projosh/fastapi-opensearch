@@ -1,8 +1,15 @@
-from pydantic import BaseModel, Field
 from datetime import datetime
+from enum import Enum
+from pydantic import BaseModel
+
+class LogLevel(str, Enum):
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    DEBUG = "DEBUG"
 
 class LogEntry(BaseModel):
     timestamp: datetime
-    level: str = Field(..., pattern="^(INFO|WARNING|ERROR|DEBUG)$")
+    level: LogLevel
     message: str
     service: str
