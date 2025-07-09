@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI
 from typing import Optional
 from app.models import LogEntry
 from app.opensearch_client import client
@@ -14,7 +14,8 @@ def ingest_log(log: LogEntry):
     response = client.index(index=index_name, body=log.dict())
     return {"result": response["result"], "id": response["_id"]}
 
-@app.get("/logs")
+#endpoint to ingest logs
+@app.get("/logs/search")
 def search_logs(
     service: Optional[str] = None,
     level: Optional[str] = None,
