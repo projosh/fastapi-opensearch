@@ -1,43 +1,41 @@
-from fastapi import FastAPI
-from typing import Optional
-from app.models import LogEntry
-from app.opensearch_client import client
-from app.utils import create_index_if_not_exists
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+from typing import List, Optional
+from opensearch_client import get_client
+from schemas import LogInput, LogOutput
+import os
 
 app = FastAPI()
 
-@app.post("/logs")
-def ingest_log(log: LogEntry):
-    index_name = f"logs-{log.service}"
-    create_index_if_not_exists(client, index_name)
-    response = client.index(index=index_name, body=log.dict())
-    return {"result": response["result"], "id": response["_id"]}
+# CORS pour le frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-#endpoint to ingest logs
-@app.get("/logs/search")
-def search_logs(
-    service: Optional[str] = None,
-    level: Optional[str] = None,
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None
-):
-    query = {"bool": {"must": []}}
+client = get_client()
 
-    if service:
-        query["bool"]["must"].append({"term": {"service": service}})
+@app.post("/logs", response_model=LogOutput)
+def create_log(log: LogInput):
+    index = f"logs-{datetime.now().strftime('%Y.%m.%d')}"
+    res = client.index(index=index, body=log.dict())
+    return {"id": res["_id"], **log.dict()}
+
+@app.get("/logs/search", response_model=List[LogOutput])
+def search_logs(q: Optional[str] = None, level: Optional[str] = None, service: Optional[str] = None):
+    must = []
+
+    if q:
+        must.append({"match": {"message": q}})
     if level:
-        query["bool"]["must"].append({"term": {"level": level}})
-    if start_time and end_time:
-        query["bool"]["must"].append({
-            "range": {
-                "timestamp": {
-                    "gte": start_time.isoformat(),
-                    "lte": end_time.isoformat()
-                }
-            }
-        })
+        must.append({"term": {"level": level}})
+    if service:
+        must.append({"term": {"service": service}})
 
-    index_pattern = f"logs-{service}" if service else "logs-*"
-    response = client.search(index=index_pattern, body={"query": query})
-    return {"hits": [hit["_source"] for hit in response["hits"]["hits"]]}
+    query = {"query": {"bool": {"must": must}}, "sort": [{"timestamp": {"order": "desc"}}]}
+
+    res = client.search(index="logs-*", body=query)
+    return [{"id": hit["_id"], **hit["_source"]} for hit in res["hits"]["hits"]]
